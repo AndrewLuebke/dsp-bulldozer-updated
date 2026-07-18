@@ -35,7 +35,6 @@ namespace Bulldozer.SelectiveDecoration
             var reformCount = platformSystem.maxReformCount;
             var setModIndexes = new HashSet<int>();
             var consumedFoundation = 0;
-            var foundationUsedUp = false;
             for (var index = 0; index < reformCount; ++index)
             {
                 var latLon = _reformIndexInfoProvider.GetForIndex(index);
@@ -90,7 +89,7 @@ namespace Bulldozer.SelectiveDecoration
             }
             for (int index = 0; index < platformSystem.planet.dirtyFlags.Length; ++index)
                 platformSystem.planet.dirtyFlags[index] = true;
-            platformSystem.planet.landPercentDirty =true;
+            platformSystem.planet.landPercentDirtyFlag = true;
             if (platformSystem.planet.UpdateDirtyMeshes())
                 platformSystem.planet.factory.RenderLocalPlanetHeightmap();
         }
@@ -175,7 +174,7 @@ namespace Bulldozer.SelectiveDecoration
             int length2 = dirtyFlags.Length;
             for (int index = 0; index < length2; ++index)
                 dirtyFlags[index] = true;
-            GameMain.localPlanet.landPercentDirty = true;
+            GameMain.localPlanet.landPercentDirtyFlag = true;
             if (GameMain.localPlanet.UpdateDirtyMeshes())
                 GameMain.localPlanet.factory.RenderLocalPlanetHeightmap();
 

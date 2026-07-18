@@ -2,19 +2,15 @@
 
     <PropertyGroup>
         <TargetFramework>net48</TargetFramework>
-        <Version>1.1.8</Version>
+        <Version>1.1.12</Version>
         <Authors>Semar</Authors>
         <AssemblyName>Bulldozer</AssemblyName>
         <Product>Bulldozer</Product>
         <RepositoryUrl>https://github.com/mattsemar/dsp-bulldozer</RepositoryUrl>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>latest</LangVersion>
-	<GenerateAssemblyInfo>false</GenerateAssemblyInfo> <!-- Needed to prevent conflicts with AssemblyInfo.cs on newer dotnet compilers -->
-	    <RestoreAdditionalProjectSources>
-	      https://api.nuget.org/v3/index.json;
-	      https://nuget.bepinex.dev/v3/index.json;
-	      https://nuget.samboy.dev/v3/index.json
-	    </RestoreAdditionalProjectSources>
+        <AssemblyVersion>1.1.12.0</AssemblyVersion>
+        <FileVersion>1.1.12.0</FileVersion>
     </PropertyGroup>
 
     <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
@@ -22,11 +18,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
-        <PackageReference Include="BepInEx.Core" Version="5.*" />
-        <PackageReference Include="BepInEx.PluginInfoProps" Version="1.*" />
-    	<PackageReference Include="DysonSphereProgram.GameLibs" Version="0.10.28.21011-r.0" />
-        <PackageReference Include="DysonSphereProgram.Modding.CommonAPI" Version="*-*" />
+        <PackageReference Include="BepInEx.Analyzers" Version="1.0.8" PrivateAssets="all" />
+        <PackageReference Include="BepInEx.Core" Version="5.4.17" />
+        <PackageReference Include="BepInEx.PluginInfoProps" Version="1.1.0" />
+        <PackageReference Include="DysonSphereProgram.GameLibs" Version="0.10.34.28529-r.0" />
         <PackageReference Include="UnityEngine.Modules" Version="2018.4.12" IncludeAssets="compile" />
     </ItemGroup>
 
@@ -43,7 +38,6 @@
 
     <ItemGroup>
         <Folder Include="Examples" />
-        <Folder Include="Libs" />
     </ItemGroup>
 
     <ItemGroup>
@@ -51,9 +45,5 @@
         <None Remove="compile.ps1" />
         <None Remove="bulldozer.zip" />
     </ItemGroup>
-
-    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-        <Exec Command="xcopy /y /d  &quot;$(TargetDir)\*.dll&quot; &quot;C:\Users\Jimmie\AppData\Roaming\r2modmanPlus-local\DysonSphereProgram\profiles\DSP_Default_newgame\BepInEx\plugins\Semar-Bulldozer\&quot;&#xD;&#xA;&#xD;&#xA;" />
-    </Target>
 
 </Project>

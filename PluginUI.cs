@@ -24,7 +24,7 @@ namespace Bulldozer
             "Destroy all factory machines in selected latitude range";
 
         public static ManualLogSource logger;
-        private static List<GameObject> gameObjectsToDestroy = new();
+        private readonly List<GameObject> gameObjectsToDestroy = new();
 
         public GameObject DrawEquatorCheck;
         public Sprite spriteChecked;
@@ -59,6 +59,14 @@ namespace Bulldozer
         private GameObject AlterVeinsCheck;
         private GameObject DestroyMachinesCheck;
         private GameObject ConfigButton;
+        private bool _initialized;
+
+        public bool IsUsable => _initialized
+                                && BulldozeButton != null
+                                && PaveActionButton != null
+                                && PaveActionButton.button != null
+                                && mainActionButton != null
+                                && mainActionButton.button != null;
 
         public bool TechUnlockedState
         {
@@ -66,6 +74,11 @@ namespace Bulldozer
             set
             {
                 _techUnlocked = value;
+                if (mainActionButton == null || mainActionButton.button == null)
+                {
+                    return;
+                }
+
                 if (!_techUnlocked)
                 {
                     mainActionButton.button.interactable = false;
@@ -84,6 +97,11 @@ namespace Bulldozer
             set
             {
                 _readyToGo = value;
+                if (mainActionButton == null || mainActionButton.button == null)
+                {
+                    return;
+                }
+
                 if (_techUnlocked && !_readyToGo)
                 {
                     mainActionButton.button.interactable = false;
@@ -99,24 +117,32 @@ namespace Bulldozer
 
         public void Update()
         {
+            if (!IsUsable)
+            {
+                return;
+            }
+
             if (_drawEquatorField != PluginConfig.addGuideLines.Value)
             {
                 // value might have been updated in config manager plugin ui
-                CheckBoxImage.sprite = PluginConfig.addGuideLines.Value ? spriteChecked : spriteUnChecked;
+                if (CheckBoxImage != null)
+                    CheckBoxImage.sprite = PluginConfig.addGuideLines.Value ? spriteChecked : spriteUnChecked;
                 _drawEquatorField = PluginConfig.addGuideLines.Value;
             }
 
             if (_alterVeinsField != PluginConfig.alterVeinState.Value)
             {
                 // sync checkbox with externally changed value
-                AlterVeinsCheckBoxImage.sprite = PluginConfig.alterVeinState.Value ? spriteChecked : spriteUnChecked;
+                if (AlterVeinsCheckBoxImage != null)
+                    AlterVeinsCheckBoxImage.sprite = PluginConfig.alterVeinState.Value ? spriteChecked : spriteUnChecked;
                 _alterVeinsField = PluginConfig.alterVeinState.Value;
             }
 
             if (_destroyFactoryMachines != PluginConfig.destroyFactoryAssemblers.Value)
             {
                 // sync checkbox with externally changed value
-                DestroyMachinesCheckBoxImage.sprite = PluginConfig.destroyFactoryAssemblers.Value ? spriteChecked : spriteUnChecked;
+                if (DestroyMachinesCheckBoxImage != null)
+                    DestroyMachinesCheckBoxImage.sprite = PluginConfig.destroyFactoryAssemblers.Value ? spriteChecked : spriteUnChecked;
                 _destroyFactoryMachines = PluginConfig.destroyFactoryAssemblers.Value;
             }
 
@@ -194,7 +220,7 @@ namespace Bulldozer
                         Log.Debug($"Failed to parse xvalue {parts[0]}");
                     }
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
                     // ignored
                 }
@@ -202,20 +228,64 @@ namespace Bulldozer
         }
 
 
-        public void AddBulldozeComponents(RectTransform environmentModificationContainer, UIBuildMenu uiBuildMenu, GameObject foundationButton,
-            GameObject reformAllButton, Action<int> action)
+        public bool TryAddBulldozeComponents(RectTransform environmentModificationContainer, GameObject foundationButton,
+            Action<int> action, out string failureReason)
         {
-            InitOnOffSprites();
-            InitActionButton(foundationButton, action);
-            InitDrawEquatorCheckbox(environmentModificationContainer, foundationButton);
-            InitAlterVeinsCheckbox(environmentModificationContainer);
-            InitDestroyMachinesCheckbox(environmentModificationContainer);
-            InitConfigButton(environmentModificationContainer);
+            failureReason = null;
+            try
+            {
+                Unload();
+                if (environmentModificationContainer == null)
+                {
+                    failureReason = "Unable to initialize Bulldozer UI: Environment Modification container is null.";
+                    return false;
+                }
+
+                if (!InitOnOffSprites(out failureReason) || !InitActionButton(foundationButton, action, out failureReason))
+                {
+                    Unload();
+                    return false;
+                }
+
+                InitDrawEquatorCheckbox(environmentModificationContainer, foundationButton);
+                InitAlterVeinsCheckbox(environmentModificationContainer);
+                InitDestroyMachinesCheckbox(environmentModificationContainer);
+                InitConfigButton(environmentModificationContainer);
+
+                if (CheckBoxImage == null || AlterVeinsCheckBoxImage == null || DestroyMachinesCheckBoxImage == null || ConfigIconImage == null)
+                {
+                    failureReason = "Unable to initialize Bulldozer UI: one or more custom controls could not be created.";
+                    Unload();
+                    return false;
+                }
+
+                _initialized = true;
+                return true;
+            }
+            catch (Exception e)
+            {
+                failureReason = $"Unable to initialize Bulldozer UI controls: {e.Message}";
+                Unload();
+                return false;
+            }
         }
 
-        private void InitActionButton(GameObject buttonToCopy, Action<int> action)
+        private bool InitActionButton(GameObject buttonToCopy, Action<int> action, out string failureReason)
         {
+            failureReason = null;
+            if (buttonToCopy == null)
+            {
+                failureReason = "Unable to initialize Bulldozer UI: foundation button is null.";
+                return false;
+            }
+
             buttonOneRectTransform = buttonToCopy.gameObject.GetComponent<RectTransform>();
+            if (buttonOneRectTransform == null)
+            {
+                failureReason = "Unable to initialize Bulldozer UI: foundation button has no RectTransform.";
+                return false;
+            }
+
             countText = null;
             ResetButtonPos(buttonOneRectTransform);
              
@@ -223,17 +293,35 @@ namespace Bulldozer
                 buttonOneRectTransform.anchoredPosition = new Vector2((float)(buttonOneRectTransform.anchoredPosition.x - buttonOneRectTransform.sizeDelta.x / 1.5), buttonOneRectTransform.anchoredPosition.y);
             BulldozeButton = CopyButton(buttonOneRectTransform, Vector2.right * (buttonOneRectTransform.sizeDelta.x), out countText,
                 Helper.GetSprite("bulldoze"), action);
+            if (BulldozeButton == null || mainActionButton == null || mainActionButton.button == null)
+            {
+                failureReason = "Unable to initialize Bulldozer UI: foundation button does not contain the expected action control.";
+                return false;
+            }
+
             gameObjectsToDestroy.Add(BulldozeButton.gameObject);
-            PaveActionButton = BulldozeButton.GetComponent<UIButton>();
-            gameObjectsToDestroy.Add(countText.gameObject);
+            PaveActionButton = mainActionButton;
+            if (countText != null)
+            {
+                gameObjectsToDestroy.Add(countText.gameObject);
+            }
+
+            return true;
         }
 
-        private void InitOnOffSprites()
+        private bool InitOnOffSprites(out string failureReason)
         {
+            failureReason = null;
             Texture2D texOff = Resources.Load<Texture2D>("ui/textures/sprites/icons/checkbox-off");
             Texture2D texOn = Resources.Load<Texture2D>("ui/textures/sprites/icons/checkbox-on");
+            if (texOff == null || texOn == null)
+            {
+                failureReason = "Unable to initialize Bulldozer UI: checkbox sprites could not be loaded.";
+                return false;
+            }
             spriteChecked = Sprite.Create(texOn, new Rect(0, 0, texOn.width, texOn.height), new Vector2(0.5f, 0.5f));
             spriteUnChecked = Sprite.Create(texOff, new Rect(0, 0, texOff.width, texOff.height), new Vector2(0.5f, 0.5f));
+            return true;
         }
 
         private void InitDrawEquatorCheckbox(RectTransform environmentModificationContainer, GameObject button1)
@@ -394,15 +482,19 @@ namespace Bulldozer
             ConfigIconImage = invokeConfig.gameObject.AddComponent<Image>();
             ConfigIconImage.color = new Color(0.8f, 0.8f, 0.8f, 1);
             gameObjectsToDestroy.Add(ConfigIconImage.gameObject);
-            var configImgGameObject = GameObject.Find("UI Root/Overlay Canvas/In Game/Game Menu/button-3-bg/button-3/icon");
-
-            ConfigIconImage.sprite = configImgGameObject.GetComponent<Image>().sprite;
+            ConfigIconImage.sprite = Helper.GetSprite("bulldoze");
             invokeConfig.onClick += data => { PluginConfigWindow.visible = !PluginConfigWindow.visible; };
         }
 
 
         public void Unload()
         {
+            _initialized = false;
+            if (buttonOneRectTransform != null)
+            {
+                ResetButtonPos(buttonOneRectTransform);
+            }
+
             try
             {
                 while (gameObjectsToDestroy.Count > 0)
@@ -416,12 +508,34 @@ namespace Bulldozer
                 logger.LogWarning($"failed to do unload {e.Message}");
                 logger.LogWarning(e.StackTrace);
             }
+
+            BulldozeButton = null;
+            PaveActionButton = null;
+            mainActionButton = null;
+            countText = null;
+            buttonOneRectTransform = null;
+            CheckBoxImage = null;
+            AlterVeinsCheckBoxImage = null;
+            DestroyMachinesCheckBoxImage = null;
+            ConfigIconImage = null;
         }
 
         public RectTransform CopyButton(RectTransform rectTransform, Vector2 positionDelta, out Text countComponent, Sprite newIcon, Action<int> action)
         {
+            countComponent = null;
+            if (rectTransform == null || newIcon == null || action == null)
+            {
+                return null;
+            }
+
             var copied = Instantiate(rectTransform, rectTransform.transform.parent, false);
             var copiedRectTransform = copied.GetComponent<RectTransform>();
+            if (copiedRectTransform == null)
+            {
+                Destroy(copied.gameObject);
+                return null;
+            }
+
             copiedRectTransform.anchorMin = rectTransform.anchorMin;
             copiedRectTransform.anchorMax = rectTransform.anchorMax;
             copiedRectTransform.sizeDelta = rectTransform.sizeDelta;
@@ -451,16 +565,17 @@ namespace Bulldozer
             }
 
             mainActionButton = copiedRectTransform.GetComponentInChildren<UIButton>();
-            if (mainActionButton != null)
+            if (mainActionButton == null || mainActionButton.button == null)
             {
-                mainActionButton.tips.tipTitle = "Bulldoze";
-                mainActionButton.tips.tipText = ConstructTipMessageDependentOnConfig();
-                mainActionButton.tips.offset = new Vector2(mainActionButton.tips.offset.x, mainActionButton.tips.offset.y + 100);
-                mainActionButton.button.onClick.RemoveAllListeners();
-
-                // mainActionButton.onClick += action;
-                mainActionButton.button.onClick.AddListener(delegate { action(1); });
+                Destroy(copied.gameObject);
+                return null;
             }
+
+            mainActionButton.tips.tipTitle = "Bulldoze";
+            mainActionButton.tips.tipText = ConstructTipMessageDependentOnConfig();
+            mainActionButton.tips.offset = new Vector2(mainActionButton.tips.offset.x, mainActionButton.tips.offset.y + 100);
+            mainActionButton.button.onClick.RemoveAllListeners();
+            mainActionButton.button.onClick.AddListener(delegate { action(1); });
 
             CountTransform = copiedRectTransform.transform.Find("count");
             if (CountTransform != null)
@@ -473,76 +588,105 @@ namespace Bulldozer
                 }
             }
 
-
-            countComponent = null;
             return copied;
         }
 
         public void Show(bool inittedThisTime = false)
         {
-            if (GameMain.sandboxToolsEnabled)
+            if (!IsUsable)
+            {
+                return;
+            }
+
+            if (GameMain.sandboxToolsEnabled && buttonOneRectTransform != null)
             {
                 if (!inittedThisTime)
                     buttonOneRectTransform.anchoredPosition = new Vector2((float)(buttonOneRectTransform.anchoredPosition.x - buttonOneRectTransform.sizeDelta.x / 1.5),
                         buttonOneRectTransform.anchoredPosition.y);
                 RepositionElements();
             }
-            else if (buttonOneRectTransform != null)
+            else if (buttonOneRectTransform != null && BulldozeButton != null)
             {
                 ResetButtonPos(buttonOneRectTransform);
                 BulldozeButton.anchoredPosition = buttonOneRectTransform.anchoredPosition + Vector2.right * (5 + buttonOneRectTransform.GetComponent<RectTransform>().sizeDelta.x);
                 RepositionElements();
             }
 
-            BulldozeButton.gameObject.SetActive(true);
-            PaveActionButton.gameObject.SetActive(true);
-            CheckBoxImage.gameObject.SetActive(true);
-            if (AlterVeinsCheckBoxImage.gameObject != null)
+            if (BulldozeButton != null)
+                BulldozeButton.gameObject.SetActive(true);
+            if (PaveActionButton != null)
+                PaveActionButton.gameObject.SetActive(true);
+            if (CheckBoxImage != null)
+                CheckBoxImage.gameObject.SetActive(true);
+            if (AlterVeinsCheckBoxImage != null)
             {
                 AlterVeinsCheckBoxImage.gameObject.SetActive(true);
             }
 
-            if (DestroyMachinesCheckBoxImage.gameObject != null)
+            if (DestroyMachinesCheckBoxImage != null)
                 DestroyMachinesCheckBoxImage.gameObject.SetActive(true);
-            ConfigIconImage.gameObject.SetActive(true);
+            if (ConfigIconImage != null)
+                ConfigIconImage.gameObject.SetActive(true);
         }
 
         private void RepositionElements()
         {
+            if (BulldozeButton == null || buttonOneRectTransform == null)
+                return;
+
             BulldozeButton.anchoredPosition = buttonOneRectTransform.anchoredPosition + Vector2.right * (5 + buttonOneRectTransform.GetComponent<RectTransform>().sizeDelta.x);
+            if (DrawEquatorCheck != null)
             {
                 RectTransform drawEquatorRect = DrawEquatorCheck.GetComponent<RectTransform>();
-                drawEquatorRect.anchoredPosition = new Vector2(GetCheckBoxXValue(), drawEquatorRect.anchoredPosition.y);
+                if (drawEquatorRect != null)
+                    drawEquatorRect.anchoredPosition = new Vector2(GetCheckBoxXValue(), drawEquatorRect.anchoredPosition.y);
             }
+            if (AlterVeinsCheck != null)
             {
                 RectTransform rect = AlterVeinsCheck.GetComponent<RectTransform>();
-                rect.anchoredPosition = new Vector2(GetCheckBoxXValue(), -105);
+                if (rect != null)
+                    rect.anchoredPosition = new Vector2(GetCheckBoxXValue(), -105);
             }
+            if (DestroyMachinesCheck != null)
             {
                 RectTransform rect = DestroyMachinesCheck.GetComponent<RectTransform>();
-                rect.anchoredPosition = new Vector2(GetCheckBoxXValue(), -120);
+                if (rect != null)
+                    rect.anchoredPosition = new Vector2(GetCheckBoxXValue(), -120);
             }
+            if (ConfigButton != null)
             {
                 RectTransform rect = ConfigButton.GetComponent<RectTransform>();
-                rect.anchoredPosition = new Vector2(GetCheckBoxXValue() + 19, -120);
+                if (rect != null)
+                    rect.anchoredPosition = new Vector2(GetCheckBoxXValue() + 19, -120);
             }
         }
 
         public void Hide()
         {
+            if (!IsUsable)
+            {
+                return;
+            }
+
             if (GameMain.sandboxToolsEnabled && buttonOneRectTransform != null)
                 ResetButtonPos(buttonOneRectTransform);
-            BulldozeButton.gameObject.SetActive(false);
-            PaveActionButton.gameObject.SetActive(false);
-            CheckBoxImage.gameObject.SetActive(false);
-            AlterVeinsCheckBoxImage.gameObject.SetActive(false);
-            DestroyMachinesCheckBoxImage.gameObject.SetActive(false);
-            ConfigIconImage.gameObject.SetActive(false);
+            if (BulldozeButton != null)
+                BulldozeButton.gameObject.SetActive(false);
+            if (PaveActionButton != null)
+                PaveActionButton.gameObject.SetActive(false);
+            if (CheckBoxImage != null)
+                CheckBoxImage.gameObject.SetActive(false);
+            if (AlterVeinsCheckBoxImage != null)
+                AlterVeinsCheckBoxImage.gameObject.SetActive(false);
+            if (DestroyMachinesCheckBoxImage != null)
+                DestroyMachinesCheckBoxImage.gameObject.SetActive(false);
+            if (ConfigIconImage != null)
+                ConfigIconImage.gameObject.SetActive(false);
         }
 
         public bool IsShowing()
         {
-            if (BulldozeButton == null || BulldozeButton.gameObject == false)
+            if (!IsUsable || BulldozeButton.gameObject == false)
                 return false;
             return BulldozeButton.gameObject.activeSelf;
         }
@@ -554,6 +698,11 @@ namespace Bulldozer
 
         private void OnDrawEquatorCheckClickImpl(bool explicitDisable = false)
         {
+            if (!IsUsable || CheckBoxImage == null)
+            {
+                return;
+            }
+
             if (explicitDisable)
                 PluginConfig.addGuideLines.Value = false;
             else
@@ -581,6 +730,11 @@ namespace Bulldozer
 
         private void OnAlterVeinCheckClickImpl(bool explicitDisable = false)
         {
+            if (!IsUsable || AlterVeinsCheckBoxImage == null)
+            {
+                return;
+            }
+
             if (explicitDisable)
                 PluginConfig.alterVeinState.Value = false;
             else
@@ -609,6 +763,11 @@ namespace Bulldozer
 
         private void OnDestroyMachinesCheckClickImpl(bool explicitDisable = false)
         {
+            if (!IsUsable || DestroyMachinesCheckBoxImage == null)
+            {
+                return;
+            }
+
             if (explicitDisable)
                 PluginConfig.destroyFactoryAssemblers.Value = false;
             else

@@ -16,6 +16,9 @@ namespace Bulldozer
     public class BulldozerPlugin : BaseUnityPlugin
     {
         public const string PluginGuid = "semarware.dysonsphereprogram.bulldozer";
+        private const int EnvironmentModificationCategory = 9;
+        private const int FoundationChildIndex = 1;
+        private const float UiInitRetrySeconds = 1f;
 
         private static int _soilToDeduct;
 
@@ -25,6 +28,8 @@ namespace Bulldozer
         private Harmony _harmony;
 
         private UIElements _ui;
+        private float _nextUiInitAttemptTime;
+        private string _lastUiInitializationFailure;
 
         // Awake is called once when both the game and the plugin are loaded
         private void Awake()
@@ -84,20 +89,48 @@ namespace Bulldozer
 
         private void LateUpdate()
         {
-            if (GameMain.sandboxToolsEnabled && UIRoot.instance.uiGame.buildMenu.currentCategory == 9)
-                UIRoot.instance.uiGame.buildMenu.reformAllButton.gameObject.SetActive(false);
+            var buildMenu = UIRoot.instance?.uiGame?.buildMenu;
+            if (GameMain.sandboxToolsEnabled
+                && buildMenu?.currentCategory == EnvironmentModificationCategory
+                && buildMenu.reformAllButton != null)
+            {
+                buildMenu.reformAllButton.gameObject.SetActive(false);
+            }
+
+            if (buildMenu == null || buildMenu.currentCategory != EnvironmentModificationCategory)
+            {
+                _nextUiInitAttemptTime = 0;
+                return;
+            }
+
+            if (_ui != null && !_ui.IsUsable)
+            {
+                ReleaseUi();
+            }
+
+            if (_ui != null || Time.unscaledTime < _nextUiInitAttemptTime)
+            {
+                return;
+            }
+
+            try
+            {
+                if (TryInitUi(buildMenu))
+                {
+                    _ui.Show(true);
+                }
+            }
+            catch (Exception e)
+            {
+                RecordUiInitializationFailure("Unexpected exception while retrying UI initialization.", e);
+            }
         }
 
         private void OnDestroy()
         {
             // For ScriptEngine hot-reloading
             WreckingBall.Stop();
-            if (_ui != null)
-            {
-                _ui.Unload();
-                Destroy(_ui);
-                _ui = null;
-            }
+            ReleaseUi();
 
             _reformIndexInfoProvider?.PlanetChanged(null);
 
@@ -263,7 +296,9 @@ namespace Bulldozer
             {
                 // currently we don't have an easy way to see how much soil pile would've been deducted
                 outOfSoilPile = GameMain.mainPlayer.sandCount - _soilToDeduct <= 0;
-                GameMain.mainPlayer.SetSandCount(Math.Max(GameMain.mainPlayer.sandCount - _soilToDeduct, 0));
+                GameMain.mainPlayer.SetSandCount(
+                    Math.Max(GameMain.mainPlayer.sandCount - _soilToDeduct, 0),
+                    ESandSource.Reform);
                 _soilToDeduct = 0;
             }
 
@@ -272,7 +307,7 @@ namespace Bulldozer
                 GameMain.localPlanet.factory.RenderLocalPlanetHeightmap();
             }
 
-            factory.planet.landPercentDirty = true;
+            factory.planet.landPercentDirtyFlag = true;
 
             if (!outOfSoilPile || PluginConfig.soilPileConsumption.Value != OperationMode.Honest)
             {
@@ -322,96 +357,207 @@ namespace Bulldozer
         [HarmonyPostfix, HarmonyPatch(typeof(UIBuildMenu), nameof(UIBuildMenu.OnCategoryButtonClick))]
         public static void UIBuildMenu_OnCategoryButtonClick_Postfix(UIBuildMenu __instance)
         {
-            var uiBuildMenu = __instance;
             if (logger == null || instance == null)
             {
                 Console.WriteLine(Resources.BulldozerPlugin_Not_Initialized, logger, instance);
                 return;
             }
 
-            if (uiBuildMenu.currentCategory != 9)
+            try
             {
-                if (instance._ui != null)
-                {
-                    instance._ui.Hide();
-                }
+                instance.HandleBuildMenuCategoryChanged(__instance);
+            }
+            catch (Exception e)
+            {
+                instance.RecordUiInitializationFailure("Unexpected exception while handling a build-menu category change.", e);
+            }
+        }
 
+        private void HandleBuildMenuCategoryChanged(UIBuildMenu uiBuildMenu)
+        {
+            if (uiBuildMenu == null)
+            {
                 return;
             }
 
-            var inittedThisTime = false;
-            if (instance._ui == null)
+            if (uiBuildMenu.currentCategory != EnvironmentModificationCategory)
             {
-                instance.InitUi(uiBuildMenu);
-                inittedThisTime = true;
-            }
-            else
-            {
-                instance._ui.TechUnlockedState = instance.CheckResearchedTech() || PluginConfig.disableTechRequirement.Value;
-                if (instance._reformIndexInfoProvider != null && instance._ui != null)
+                _nextUiInitAttemptTime = 0;
+                if (_ui != null && _ui.IsUsable)
                 {
-                    if (!instance._reformIndexInfoProvider.Initted && PluginConfig.NeedReformIndexProvider())
+                    _ui.Hide();
+                }
+                return;
+            }
+
+            if (_ui != null && !_ui.IsUsable)
+            {
+                ReleaseUi();
+            }
+
+            var initializedThisAttempt = _ui == null && TryInitUi(uiBuildMenu);
+            if (_ui == null)
+            {
+                return;
+            }
+
+            RefreshUiState();
+            _ui.Show(initializedThisAttempt);
+        }
+
+        private bool TryInitUi(UIBuildMenu uiBuildMenu)
+        {
+            if (!TryResolveUiParts(uiBuildMenu, out var containerRect, out var foundationButton, out var failureReason))
+            {
+                RecordUiInitializationFailure(failureReason);
+                return false;
+            }
+
+            UIElements candidate = null;
+            try
+            {
+                candidate = containerRect.gameObject.AddComponent<UIElements>();
+                UIElements.logger = logger;
+
+                if (!candidate.TryAddBulldozeComponents(containerRect, foundationButton, bt =>
+                {
+                    StartCoroutine(InvokeAction(1, () =>
                     {
-                        instance._ui.ReadyForAction = false;
-                        instance._ui.initPercent = instance._reformIndexInfoProvider.InitPercentComplete();
+                        GameMain.mainPlayer.SetHandItems(0, 0);
+                        GameMain.mainPlayer.controller.actionBuild.reformTool._Close();
+                    }));
+
+                    if (WreckingBall.IsRunning())
+                    {
+                        WreckingBall.Stop();
+                        LogAndPopupMessage("Stopping...");
+                        if (_ui?.countText != null)
+                        {
+                            _ui.countText.text = "0";
+                        }
                     }
                     else
                     {
-                        instance._ui.ReadyForAction = true;
+                        var popupMessage = ConstructPopupMessage(GameMain.localPlanet);
+                        var boxTitle = PluginConfig.IsLatConstrained() ? "Bulldoze selected latitudes" : "Bulldoze planet";
+                        UIMessageBox.Show(boxTitle, popupMessage.Translate(),
+                            "Ok", "Cancel", 0, InvokePluginCommands, () => { LogAndPopupMessage("Canceled"); });
                     }
+                }, out failureReason))
+                {
+                    candidate.Unload();
+                    Destroy(candidate);
+                    RecordUiInitializationFailure(failureReason);
+                    return false;
                 }
 
+                _ui = candidate;
+                RefreshUiState();
+                _lastUiInitializationFailure = null;
+                _nextUiInitAttemptTime = 0;
+                return true;
             }
-            instance._ui.Show(inittedThisTime);
+            catch (Exception e)
+            {
+                if (candidate != null)
+                {
+                    candidate.Unload();
+                    Destroy(candidate);
+                }
+
+                RecordUiInitializationFailure("Unexpected exception while creating Bulldozer UI.", e);
+                return false;
+            }
         }
 
-        private void InitUi(UIBuildMenu uiBuildMenu)
+        private static bool TryResolveUiParts(UIBuildMenu uiBuildMenu, out RectTransform containerRect,
+            out GameObject foundationButton, out string failureReason)
         {
-            GameObject environmentModificationContainer = GameObject.Find("UI Root/Overlay Canvas/In Game/Function Panel/Build Menu/child-group");
-            var containerRect = environmentModificationContainer.GetComponent<RectTransform>();
-            var foundationButton = GameObject.Find("UI Root/Overlay Canvas/In Game/Function Panel/Build Menu/child-group/button-1");
-            var reformAllButton = GameObject.Find("UI Root/Overlay Canvas/In Game/Function Panel/Build Menu/reform-group/button-reform-all");
-            
-            _ui = containerRect.gameObject.AddComponent<UIElements>();
-            UIElements.logger = logger;
-            if (containerRect == null || foundationButton == null)
+            containerRect = null;
+            foundationButton = null;
+            failureReason = null;
+
+            if (uiBuildMenu == null)
+            {
+                failureReason = "Unable to initialize Bulldozer UI: UIBuildMenu is null.";
+                return false;
+            }
+
+            var childGroup = uiBuildMenu.childGroup;
+            containerRect = childGroup?.GetComponent<RectTransform>();
+            var childButtons = uiBuildMenu.childButtons;
+            UIButton foundationSlot = null;
+            if (childButtons != null && childButtons.Length > FoundationChildIndex)
+            {
+                foundationSlot = childButtons[FoundationChildIndex];
+            }
+
+            var fallback = childGroup?.transform.Find("button-1");
+            foundationButton = foundationSlot != null ? foundationSlot.gameObject : fallback?.gameObject;
+            var actionButton = foundationButton?.GetComponentInChildren<UIButton>();
+            if (containerRect != null && foundationButton != null && actionButton != null && actionButton.button != null)
+            {
+                return true;
+            }
+
+            var childButtonLength = childButtons == null ? "null" : childButtons.Length.ToString();
+            failureReason = "Unable to initialize Bulldozer UI: Environment Modification template was not found " +
+                            $"(childGroup={(childGroup != null)}, containerRect={(containerRect != null)}, " +
+                            $"childButtonsLength={childButtonLength}, childButton1={(foundationSlot != null)}, " +
+                            $"relativeButton1={(fallback != null)}, actionButton={(actionButton != null)}).";
+            return false;
+        }
+
+        private void RefreshUiState()
+        {
+            if (_ui == null || !_ui.IsUsable)
             {
                 return;
             }
 
-            _ui.AddBulldozeComponents(containerRect, uiBuildMenu, foundationButton, reformAllButton, bt =>
-            {
-                StartCoroutine(InvokeAction(1, () =>
-                {
-                    GameMain.mainPlayer.SetHandItems(0, 0);
-                    GameMain.mainPlayer.controller.actionBuild.reformTool._Close();
-                }));
-
-                if (WreckingBall.IsRunning())
-                {
-                    WreckingBall.Stop();
-                    LogAndPopupMessage("Stopping...");
-                    _ui.countText.text = "0";
-                }
-                else
-                {
-                    var popupMessage = ConstructPopupMessage(GameMain.localPlanet);
-                    var boxTitle = PluginConfig.IsLatConstrained() ? "Bulldoze selected latitudes" : "Bulldoze planet";
-                    UIMessageBox.Show(boxTitle, popupMessage.Translate(),
-                        "Ok", "Cancel", 0, InvokePluginCommands, () => { LogAndPopupMessage("Canceled"); });
-                }
-            });
-
             _ui.TechUnlockedState = CheckResearchedTech() || PluginConfig.disableTechRequirement.Value;
-            if (PluginConfig.NeedReformIndexProvider())
+            if (_reformIndexInfoProvider != null && PluginConfig.NeedReformIndexProvider())
             {
-                _ui.ReadyForAction = _reformIndexInfoProvider is { Initted: true };
-                _ui.initPercent = _reformIndexInfoProvider?.InitPercentComplete() ?? 0;
+                _ui.ReadyForAction = _reformIndexInfoProvider.Initted;
+                _ui.initPercent = _reformIndexInfoProvider.InitPercentComplete();
             }
             else
             {
                 _ui.ReadyForAction = true;
             }
+        }
+
+        private void ReleaseUi()
+        {
+            if (_ui == null)
+            {
+                return;
+            }
+
+            _ui.Unload();
+            Destroy(_ui);
+            _ui = null;
+        }
+
+        private void RecordUiInitializationFailure(string reason, Exception exception = null)
+        {
+            var message = reason ?? "Unable to initialize Bulldozer UI for an unknown reason.";
+            if (_lastUiInitializationFailure != message)
+            {
+                logger.LogWarning(message);
+                if (exception != null)
+                {
+                    logger.LogWarning(exception);
+                }
+
+                _lastUiInitializationFailure = message;
+            }
+            else
+            {
+                logger.LogDebug(message);
+            }
+
+            _nextUiInitAttemptTime = Time.unscaledTime + UiInitRetrySeconds;
         }
 
         private string ConstructPopupMessage(PlanetData localPlanet)

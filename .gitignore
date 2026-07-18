@@ -10,3 +10,4 @@ Bulldozer.csproj.user
 *.user
 /tmp_release/README.md
 /tmp/README.md
+artifacts/

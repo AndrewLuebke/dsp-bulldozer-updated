@@ -5,7 +5,6 @@ namespace Bulldozer
     /// <summary>Helps finding items on local planet from player, storage boxes and logistics stations</summary>
     public class StorageSystemManager
     {
-        private static StorageSystemManager _instance;
         private readonly PlanetFactory _factory;
         private readonly Player _player;
 
