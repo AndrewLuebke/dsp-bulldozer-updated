@@ -12,7 +12,10 @@ namespace Bulldozer
     {
         private const int LatitudesPerPass = 10;
         private readonly Dictionary<int, LatLon> _llLookup = new();
-        private readonly LatLon[] _llModLookup = new LatLon[GameMain.localPlanet.data.modData.Length * 2];
+        // Sized per-planet in EnsureModLookup: the old readonly field was sized once from
+        // GameMain.localPlanet at construction, so arriving at any LARGER planet (e.g.
+        // GalacticScale worlds) overran it with IndexOutOfRangeException in DoInitWork.
+        private LatLon[] _llModLookup = Array.Empty<LatLon>();
         private readonly HashSet<LatLon> _tropicsLatitudes = new();
         private readonly LatLon[] _equatorLatitudes = { LatLon.Empty, LatLon.Empty };
         private readonly HashSet<LatLon> _meridians = new();
@@ -27,6 +30,19 @@ namespace Bulldozer
         {
             this.platformSystem = platformSystem;
             _planetId = platformSystem.planet.id;
+            EnsureModLookup(clearIfSameSize: true);
+        }
+
+        private void EnsureModLookup(bool clearIfSameSize)
+        {
+            var data = platformSystem?.planet?.data;
+            var needed = 0;
+            if (data != null)
+                needed = Math.Max(data.dataLength, data.modData != null ? data.modData.Length * 2 : 0);
+            if (_llModLookup.Length != needed)
+                _llModLookup = needed > 0 ? new LatLon[needed] : Array.Empty<LatLon>();
+            else if (clearIfSameSize)
+                Array.Clear(_llModLookup, 0, _llModLookup.Length);
         }
 
         public int PlanetId => _planetId;
@@ -35,7 +51,6 @@ namespace Bulldozer
         private void SetInitValues(PlatformSystem newPlatformSystem, int planetId)
         {
             _llLookup.Clear();
-            Array.Clear(_llModLookup, 0, _llLookup.Count);
             _tropicsLatitudes.Clear();
             _equatorLatitudes[0] = LatLon.Empty;
             _equatorLatitudes[1] = LatLon.Empty;
@@ -43,6 +58,10 @@ namespace Bulldozer
             _lookupsCreated = false;
             _planetId = planetId;
             platformSystem = newPlatformSystem;
+            // resize (or fully clear) the mod-index table for the NEW planet; the old code
+            // cleared _llLookup.Count elements after clearing that dictionary - i.e. zero -
+            // leaking stale entries across planet changes
+            EnsureModLookup(clearIfSameSize: true);
             _latLookupWorkItemIndex = -89.9f;
             _initUpdateCounter = 0;
         }
@@ -92,7 +111,7 @@ namespace Bulldozer
                 return LatLon.Empty;
             }
 
-            if (_llModLookup[index].IsEmpty())
+            if (index < 0 || index >= _llModLookup.Length || _llModLookup[index].IsEmpty())
                 return LatLon.Empty;
             return _llModLookup[index];
         }
@@ -116,6 +135,12 @@ namespace Bulldozer
                 Warn($"plat system null for planet {planetData.id}");
                 return;
             }
+
+            // the constructor can run before modData exists; re-check size (without
+            // wiping rows already filled this planet) before writing
+            EnsureModLookup(clearIfSameSize: false);
+            if (_llModLookup.Length == 0)
+                return;
 
             _initUpdateCounter++;
             if (_initUpdateCounter > 2_000)
@@ -186,7 +211,8 @@ namespace Bulldozer
 
                             var pos = GeoUtil.LatLonToPosition(_latLookupWorkItemIndex, -longDegrees, platformSystem.planet.realRadius);
                             var currentDataIndex = planetRawData.QueryIndex(pos);
-                            _llModLookup[currentDataIndex] = _llLookup[desired];
+                            if (currentDataIndex >= 0 && currentDataIndex < _llModLookup.Length)
+                                _llModLookup[currentDataIndex] = _llLookup[desired];
                         }
                         else
                         {
@@ -194,7 +220,8 @@ namespace Bulldozer
                             _llLookup[desired] = LatLon.FromCoords(_latLookupWorkItemIndex, longDegrees, latLonPrecision);
                             var pos = GeoUtil.LatLonToPosition(_latLookupWorkItemIndex, longDegrees, platformSystem.planet.realRadius);
                             var currentDataIndex = planetRawData.QueryIndex(pos);
-                            _llModLookup[currentDataIndex] = _llLookup[desired];
+                            if (currentDataIndex >= 0 && currentDataIndex < _llModLookup.Length)
+                                _llModLookup[currentDataIndex] = _llLookup[desired];
                         }
 
                         if ((desired - startNdx) % longMod == 0 || (desired + 1 == endNdxExclusive))
