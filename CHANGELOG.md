@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.13 - 2026-09-08
+
+First release under IlldariFairlight (maintained fork of Samox 1.1.12; fix
+submitted upstream as samox73/dsp-bulldozer-updated#1, unanswered as of
+2026-09-08).
+
+- Fixed `IndexOutOfRangeException` crash in `ReformIndexInfoProvider` on any planet
+  larger than the one the game loaded in on (e.g. Galactic Scale resized worlds):
+  the mod-index lookup was sized once at construction from the starting planet and
+  never reallocated. It is now (re)allocated per planet change, and reads are
+  bounds-guarded.
+- Fixed stale latitude/longitude lookup data leaking across planet changes (the
+  clear ran against an already-emptied list, clearing nothing), which could silently
+  pave a smaller planet using the previous planet's coordinate mapping.
+
 ## 1.1.12 - 2026-07-18
 
 - Fixed Environment Modification UI initialization by using DSP's foundation button slot.

@@ -2,7 +2,11 @@
 
 Bulldozer quickly paves an entire planet, adds painted guide lines, adjusts vein height, and can tear down existing factory machines.
 
-Version 1.1.11 supports Dyson Sphere Program `0.10.34.28529` and BepInEx `5.4.17`. It is an updated fork of the original work by Semar and JClark. Do not install it alongside another Bulldozer fork: they share the same plugin GUID and can create duplicate UI controls.
+Version 1.1.13 supports Dyson Sphere Program `0.10.34.28529` and BepInEx `5.4.17`. This is a maintained fork of the Bulldozer lineage — original by [Semar](https://github.com/mattsemar/dsp-bulldozer), continued by JClark, magnucha, and [Samox](https://github.com/samox73/dsp-bulldozer-updated); all credit for the mod itself to them. This fork exists because 1.1.12 crashes (`IndexOutOfRangeException` every frame, autosave disabled) on planets larger than the one you loaded in on — most commonly Galactic Scale resized worlds — and the [fix we submitted upstream](https://github.com/samox73/dsp-bulldozer-updated/pull/1) has gone unanswered. If a previous maintainer returns, we will gladly hand this back or deprecate in favor of upstream.
+
+The original lineage was published without a license. We claim no copyright over prior authors' work.
+
+If you have another Bulldozer package installed (Samox-Bulldozer, magnucha-Bulldozer, JClark-Bulldozer, or Semar-Bulldozer), remove or disable it before installing this one. They share the same plugin GUID and can create duplicate UI controls. This package is the same mod plus the crash and mapping fixes, and your existing config carries over.
 
 Back up your saves before using factory teardown, vein movement, or whole-planet terrain changes. Fast Delete is an experimental teardown optimization; disable it in the config if you encounter any inconsistency.
 

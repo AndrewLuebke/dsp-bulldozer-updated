@@ -1,8 +1,8 @@
 {
     "name":  "Bulldozer",
-    "version_number":  "1.1.12",
-    "website_url":  "https://github.com/samox73/dsp-bulldozer-updated",
-    "description":  "Quickly pave an entire planet. Supports adding painted markings at various locations (equator, tropics, meridians). Also has ability to bulldoze existing factory machines",
+    "version_number":  "1.1.13",
+    "website_url":  "https://github.com/AndrewLuebke/dsp-bulldozer-updated",
+    "description":  "Pave a planet, paint guide lines, raise/bury veins, tear down machines. Maintained fork of DSP Bulldozer; fixes crash on large/resized (Galactic Scale) planets.",
     "dependencies":  [
                          "xiaoye97-BepInEx-5.4.17"
                      ]
