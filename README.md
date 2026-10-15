@@ -20,7 +20,7 @@ Back up your saves before using factory teardown, vein movement, or whole-planet
 
 Non-cheaty soil-pile handling remains incomplete: foundation is deducted correctly, but soil-pile limits are not fully honored in every mode.
 
-Open the **Environment Modification** build menu to find the action button.
+Open the **Environment Modification** build menu to find the action button, left of the foundation button. Right-click it to open the settings window.
 
 ![Foundation example](https://github.com/mattsemar/dsp-bulldozer/blob/master/Examples/example2.png?raw=true)
 

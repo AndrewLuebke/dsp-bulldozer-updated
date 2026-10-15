@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.14 - 2026-10-15
+
+- Updated for Dyson Sphere Program 0.10.35: `PlanetAuxData.ReformSnap` gained a reform-mode argument; Bulldozer now passes the normal paving mode.
+- Fixed the Bulldozer button overlapping the game's Environment Modification controls in 0.10.35 (terrain restoration, vegetation transplant and vein raise/bury now follow the foundation button). The Bulldozer button and its option checkboxes now sit to the left of the foundation button, and the game's foundation button is no longer moved in sandbox mode. To fit inside the build menu, the Bulldozer button is drawn at 75% size and the separate config icon is gone: right-click the Bulldozer button to open the settings window.
+- The foundation button's original position is now captured each session instead of being restored from a value saved in the config by an older game version, which could force the button back into a pre-0.10.35 layout.
+
 ## 1.1.13 - 2026-09-08
 
 First release under IlldariFairlight (maintained fork of Samox 1.1.12; fix

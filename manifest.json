@@ -1,6 +1,6 @@
 {
     "name":  "Bulldozer",
-    "version_number":  "1.1.13",
+    "version_number":  "1.1.14",
     "website_url":  "https://github.com/AndrewLuebke/dsp-bulldozer-updated",
     "description":  "Pave a planet, paint guide lines, raise/bury veins, tear down machines. Maintained fork of DSP Bulldozer; fixes crash on large/resized (Galactic Scale) planets.",
     "dependencies":  [

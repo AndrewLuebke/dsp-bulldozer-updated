@@ -14,6 +14,10 @@ namespace Bulldozer
 
     public class GridExplorer
     {
+        // DSP 0.10.35 added a reform mode argument to PlanetAuxData.ReformSnap; 0 is normal paving
+        // (the game's default), non-zero values are used by the new terrain restoration mode.
+        private const int NormalReformMode = 0;
+
         public delegate void PostComputeReformAction(SnapArgs snapArgs, Vector3 center, float radius, int reformSize, int neededSoilPile, bool timeExpired = false,
             float lastLat = 0, float lastLon = 0);
 
@@ -56,7 +60,7 @@ namespace Bulldozer
                     }
 
                     var snapArgs = new SnapArgs();
-                    cursorPointCount = reformTool.planet.aux.ReformSnap(position, 10, 1, 1, snapArgs.points, snapArgs.indices, platformSystem,
+                    cursorPointCount = reformTool.planet.aux.ReformSnap(position, NormalReformMode, 10, 1, 1, snapArgs.points, snapArgs.indices, platformSystem,
                         out var center);
                     var queryIndex = reformTool.planet.data.QueryIndex(center);
                     if (checkedDataPos.Contains(queryIndex))

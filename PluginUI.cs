@@ -23,6 +23,17 @@ namespace Bulldozer
         private const string DEFAULT_TIP_MESSAGE_DESTROY_FACTORY_IN_LAT =
             "Destroy all factory machines in selected latitude range";
 
+        // Layout of Bulldozer's controls, left of the game's foundation button:
+        // [Bulldozer button (scaled down)] ButtonGap [checkbox column] CheckBoxGap [foundation button]
+        // The space between the build menu's left edge and the foundation button is narrow, so the button is
+        // drawn smaller than the game's buttons and settings are opened by right-clicking it.
+        private const float BulldozeButtonScale = 0.75f;
+        private const float ButtonGap = 4f;
+        private const float CheckBoxGap = 6f;
+        private const float CheckBoxWidth = 20f;
+        private RectTransform _bulldozeButtonHolder;
+        private static readonly Vector3[] WorldCorners = new Vector3[4];
+
         public static ManualLogSource logger;
         private readonly List<GameObject> gameObjectsToDestroy = new();
 
@@ -48,7 +59,6 @@ namespace Bulldozer
         private bool _readyToGo;
         [NonSerialized] public Image AlterVeinsCheckBoxImage;
         [NonSerialized] public Image CheckBoxImage;
-        [NonSerialized] public Image ConfigIconImage;
 
         private bool currentTipMessageIsDefault = true;
         [NonSerialized] public Image DestroyMachinesCheckBoxImage;
@@ -58,7 +68,6 @@ namespace Bulldozer
         private RectTransform buttonOneRectTransform;
         private GameObject AlterVeinsCheck;
         private GameObject DestroyMachinesCheck;
-        private GameObject ConfigButton;
         private bool _initialized;
 
         public bool IsUsable => _initialized
@@ -191,39 +200,29 @@ namespace Bulldozer
             return DEFAULT_TIP_MESSAGE_PT1 + part2;
         }
 
+        // Position of the game's foundation button as the game laid it out, captured the first time this session.
+        // Older versions moved the button in sandbox mode and persisted its original position to the config,
+        // which meant a value saved under an older game layout kept forcing the button back to that layout after
+        // DSP rearranged the Environment Modification row (0.10.35 added the terrain restoration button).
+        private static Vector2? _originalFoundationButtonPosition;
+
         private static void ResetButtonPos(RectTransform rectTransform)
         {
-            var posStr = $"{rectTransform.anchoredPosition.x},{rectTransform.anchoredPosition.y}";
-            if (PluginConfig.originalReformButtonPosition.Value == "0,0")
+            if (rectTransform == null)
             {
-                PluginConfig.originalReformButtonPosition.Value = posStr;
+                return;
             }
-            else if (posStr != PluginConfig.originalReformButtonPosition.Value)
+
+            if (_originalFoundationButtonPosition == null)
             {
-                var parts = PluginConfig.originalReformButtonPosition.Value.Split(',');
-                try
-                {
-                    if (float.TryParse(parts[0].Trim(), out var resultx))
-                    {
-                        if (float.TryParse(parts[1].Trim(), out var resulty))
-                        {
-                            Log.Debug($"Setting button back to original {PluginConfig.originalReformButtonPosition.Value} {resultx}, {resulty}");
-                            rectTransform.anchoredPosition = new Vector2(resultx, resulty);
-                        }
-                        else
-                        {
-                            Log.Debug($"Failed to parse yvalue {parts[1]}");
-                        }
-                    }
-                    else
-                    {
-                        Log.Debug($"Failed to parse xvalue {parts[0]}");
-                    }
-                }
-                catch (Exception)
-                {
-                    // ignored
-                }
+                _originalFoundationButtonPosition = rectTransform.anchoredPosition;
+                return;
+            }
+
+            if (rectTransform.anchoredPosition != _originalFoundationButtonPosition.Value)
+            {
+                Log.Debug($"Setting button back to original {_originalFoundationButtonPosition.Value}");
+                rectTransform.anchoredPosition = _originalFoundationButtonPosition.Value;
             }
         }
 
@@ -250,9 +249,8 @@ namespace Bulldozer
                 InitDrawEquatorCheckbox(environmentModificationContainer, foundationButton);
                 InitAlterVeinsCheckbox(environmentModificationContainer);
                 InitDestroyMachinesCheckbox(environmentModificationContainer);
-                InitConfigButton(environmentModificationContainer);
 
-                if (CheckBoxImage == null || AlterVeinsCheckBoxImage == null || DestroyMachinesCheckBoxImage == null || ConfigIconImage == null)
+                if (CheckBoxImage == null || AlterVeinsCheckBoxImage == null || DestroyMachinesCheckBoxImage == null)
                 {
                     failureReason = "Unable to initialize Bulldozer UI: one or more custom controls could not be created.";
                     Unload();
@@ -288,10 +286,7 @@ namespace Bulldozer
 
             countText = null;
             ResetButtonPos(buttonOneRectTransform);
-             
-            if (GameMain.sandboxToolsEnabled)
-                buttonOneRectTransform.anchoredPosition = new Vector2((float)(buttonOneRectTransform.anchoredPosition.x - buttonOneRectTransform.sizeDelta.x / 1.5), buttonOneRectTransform.anchoredPosition.y);
-            BulldozeButton = CopyButton(buttonOneRectTransform, Vector2.right * (buttonOneRectTransform.sizeDelta.x), out countText,
+            BulldozeButton = CopyButton(buttonOneRectTransform, Vector2.zero, out countText,
                 Helper.GetSprite("bulldoze"), action);
             if (BulldozeButton == null || mainActionButton == null || mainActionButton.button == null)
             {
@@ -300,6 +295,7 @@ namespace Bulldozer
             }
 
             gameObjectsToDestroy.Add(BulldozeButton.gameObject);
+            WrapBulldozeButtonInHolder();
             PaveActionButton = mainActionButton;
             if (countText != null)
             {
@@ -439,53 +435,85 @@ namespace Bulldozer
             destroyMachinesButton.onClick += OnDestroyMachinesCheckClick;
         }
 
+        /// <summary>
+        /// X position (from the container's left edge, matching the checkboxes' top-left anchors) of the column of
+        /// option checkboxes and the config icon. The column sits directly to the left of the game's foundation
+        /// button, between it and the Bulldozer button. DSP 0.10.35 filled the space to the right of the
+        /// foundation button (terrain restoration, vegetation transplant, vein raise/bury), so the old fixed
+        /// position put the checkboxes on top of the vegetation transplant button.
+        /// </summary>
         private float GetCheckBoxXValue()
         {
-            if (BulldozeButton != null && GameMain.sandboxToolsEnabled)
+            var container = buttonOneRectTransform != null ? buttonOneRectTransform.parent as RectTransform : null;
+            if (container == null)
             {
-                return 310;
+                return 350;
             }
 
-            return 350;
+            buttonOneRectTransform.GetWorldCorners(WorldCorners);
+            var foundationLeft = container.InverseTransformPoint(WorldCorners[0]).x - container.rect.xMin;
+            return foundationLeft - CheckBoxGap - CheckBoxWidth;
         }
 
-        private void InitConfigButton(RectTransform environmentModificationContainer)
+        /// <summary>
+        /// Shrinks the Bulldozer button and places it directly left of the checkbox column, vertically centred on
+        /// the game's foundation button. The space to the right of the foundation button is taken by the game's
+        /// own controls since DSP 0.10.35 and is split across several containers, so the left side is the only
+        /// spot that does not depend on how the game lays out the rest of the row. Positions are measured from the
+        /// rendered corners so the result does not depend on the button's pivot or anchors.
+        /// </summary>
+        private void PositionBulldozeButton()
         {
-            ConfigButton = new GameObject("Config");
-            gameObjectsToDestroy.Add(ConfigButton);
-            var rect = ConfigButton.AddComponent<RectTransform>();
-            rect.SetParent(environmentModificationContainer.transform, false);
-
-            rect.anchorMax = new Vector2(0, 1);
-            rect.anchorMin = new Vector2(0, 1);
-            rect.sizeDelta = new Vector2(20, 20);
-            rect.pivot = new Vector2(0, 0.5f);
-            rect.anchoredPosition = new Vector2(GetCheckBoxXValue() + 18, -120);
-            var invokeConfig = rect.gameObject.AddComponent<CheckboxControl>();
-            invokeConfig.HoverText = "Open config";
-
-            if (countText != null)
+            var container = buttonOneRectTransform.parent as RectTransform;
+            if (container == null)
             {
-                var configHover = Instantiate(countText, environmentModificationContainer.transform, true);
-                gameObjectsToDestroy.Add(configHover.gameObject);
-                var copiedRectTransform = configHover.GetComponent<RectTransform>();
-                var parentRect = environmentModificationContainer.GetComponent<RectTransform>();
-                copiedRectTransform.anchorMin = new Vector2(0, 1);
-                copiedRectTransform.anchorMax = new Vector2(0, 1);
-                copiedRectTransform.sizeDelta = new Vector2(800, 20);
-                copiedRectTransform.anchoredPosition = new Vector2(400, parentRect.transform.position.y - 115);
-                invokeConfig.textObject = configHover;
+                return;
             }
 
-            gameObjectsToDestroy.Add(invokeConfig.gameObject);
+            // Scale and move the holder, not the button: the game's UIButton animates the button's own scale
+            // (hover/press effects) and resets it to 1, which undid a scale applied to the button directly.
+            var holder = _bulldozeButtonHolder != null ? _bulldozeButtonHolder : BulldozeButton;
+            holder.localScale = Vector3.one * BulldozeButtonScale;
+            holder.anchoredPosition = buttonOneRectTransform.anchoredPosition;
 
-            ConfigIconImage = invokeConfig.gameObject.AddComponent<Image>();
-            ConfigIconImage.color = new Color(0.8f, 0.8f, 0.8f, 1);
-            gameObjectsToDestroy.Add(ConfigIconImage.gameObject);
-            ConfigIconImage.sprite = Helper.GetSprite("bulldoze");
-            invokeConfig.onClick += data => { PluginConfigWindow.visible = !PluginConfigWindow.visible; };
+            buttonOneRectTransform.GetWorldCorners(WorldCorners);
+            var foundationMin = (Vector2)container.InverseTransformPoint(WorldCorners[0]);
+            var foundationMax = (Vector2)container.InverseTransformPoint(WorldCorners[2]);
+            holder.GetWorldCorners(WorldCorners);
+            var bulldozeMin = (Vector2)container.InverseTransformPoint(WorldCorners[0]);
+            var bulldozeMax = (Vector2)container.InverseTransformPoint(WorldCorners[2]);
+
+            var targetRight = container.rect.xMin + GetCheckBoxXValue() - ButtonGap;
+            var targetCenterY = (foundationMin.y + foundationMax.y) / 2;
+            var delta = new Vector2(targetRight - bulldozeMax.x, targetCenterY - (bulldozeMin.y + bulldozeMax.y) / 2);
+            holder.anchoredPosition += delta;
         }
 
+        /// <summary>
+        /// Puts the Bulldozer button inside an empty holder with the foundation button's size and anchors, with the
+        /// button stretched to fill it, so the holder can be scaled without the game's button animations undoing it.
+        /// </summary>
+        private void WrapBulldozeButtonInHolder()
+        {
+            var parent = BulldozeButton.parent;
+            var holderObject = new GameObject("BulldozerButtonHolder", typeof(RectTransform));
+            _bulldozeButtonHolder = holderObject.GetComponent<RectTransform>();
+            _bulldozeButtonHolder.SetParent(parent, false);
+            _bulldozeButtonHolder.anchorMin = buttonOneRectTransform.anchorMin;
+            _bulldozeButtonHolder.anchorMax = buttonOneRectTransform.anchorMax;
+            _bulldozeButtonHolder.pivot = buttonOneRectTransform.pivot;
+            _bulldozeButtonHolder.sizeDelta = buttonOneRectTransform.sizeDelta;
+            _bulldozeButtonHolder.anchoredPosition = buttonOneRectTransform.anchoredPosition;
+            gameObjectsToDestroy.Add(holderObject);
+
+            BulldozeButton.SetParent(_bulldozeButtonHolder, false);
+            BulldozeButton.anchorMin = Vector2.zero;
+            BulldozeButton.anchorMax = Vector2.one;
+            BulldozeButton.pivot = buttonOneRectTransform.pivot;
+            BulldozeButton.offsetMin = Vector2.zero;
+            BulldozeButton.offsetMax = Vector2.zero;
+            BulldozeButton.localScale = Vector3.one;
+        }
 
         public void Unload()
         {
@@ -510,6 +538,7 @@ namespace Bulldozer
             }
 
             BulldozeButton = null;
+            _bulldozeButtonHolder = null;
             PaveActionButton = null;
             mainActionButton = null;
             countText = null;
@@ -517,7 +546,6 @@ namespace Bulldozer
             CheckBoxImage = null;
             AlterVeinsCheckBoxImage = null;
             DestroyMachinesCheckBoxImage = null;
-            ConfigIconImage = null;
         }
 
         public RectTransform CopyButton(RectTransform rectTransform, Vector2 positionDelta, out Text countComponent, Sprite newIcon, Action<int> action)
@@ -571,11 +599,14 @@ namespace Bulldozer
                 return null;
             }
 
-            mainActionButton.tips.tipTitle = "Bulldoze";
+            mainActionButton.tips.tipTitle = "Bulldoze (right-click for settings)";
             mainActionButton.tips.tipText = ConstructTipMessageDependentOnConfig();
             mainActionButton.tips.offset = new Vector2(mainActionButton.tips.offset.x, mainActionButton.tips.offset.y + 100);
             mainActionButton.button.onClick.RemoveAllListeners();
             mainActionButton.button.onClick.AddListener(delegate { action(1); });
+            // Unity buttons only react to the left mouse button; right-click opens Bulldozer's settings window.
+            var rightClick = mainActionButton.button.gameObject.AddComponent<RightClickHandler>();
+            rightClick.OnRightClick = () => { PluginConfigWindow.visible = !PluginConfigWindow.visible; };
 
             CountTransform = copiedRectTransform.transform.Find("count");
             if (CountTransform != null)
@@ -598,19 +629,14 @@ namespace Bulldozer
                 return;
             }
 
-            if (GameMain.sandboxToolsEnabled && buttonOneRectTransform != null)
-            {
-                if (!inittedThisTime)
-                    buttonOneRectTransform.anchoredPosition = new Vector2((float)(buttonOneRectTransform.anchoredPosition.x - buttonOneRectTransform.sizeDelta.x / 1.5),
-                        buttonOneRectTransform.anchoredPosition.y);
-                RepositionElements();
-            }
-            else if (buttonOneRectTransform != null && BulldozeButton != null)
+            // Bulldozer sits to the left of the foundation button, so the game's own button no longer needs to be
+            // shifted to make room (older versions moved it left in sandbox mode).
+            if (buttonOneRectTransform != null)
             {
                 ResetButtonPos(buttonOneRectTransform);
-                BulldozeButton.anchoredPosition = buttonOneRectTransform.anchoredPosition + Vector2.right * (5 + buttonOneRectTransform.GetComponent<RectTransform>().sizeDelta.x);
-                RepositionElements();
             }
+
+            RepositionElements();
 
             if (BulldozeButton != null)
                 BulldozeButton.gameObject.SetActive(true);
@@ -625,8 +651,6 @@ namespace Bulldozer
 
             if (DestroyMachinesCheckBoxImage != null)
                 DestroyMachinesCheckBoxImage.gameObject.SetActive(true);
-            if (ConfigIconImage != null)
-                ConfigIconImage.gameObject.SetActive(true);
         }
 
         private void RepositionElements()
@@ -634,7 +658,7 @@ namespace Bulldozer
             if (BulldozeButton == null || buttonOneRectTransform == null)
                 return;
 
-            BulldozeButton.anchoredPosition = buttonOneRectTransform.anchoredPosition + Vector2.right * (5 + buttonOneRectTransform.GetComponent<RectTransform>().sizeDelta.x);
+            PositionBulldozeButton();
             if (DrawEquatorCheck != null)
             {
                 RectTransform drawEquatorRect = DrawEquatorCheck.GetComponent<RectTransform>();
@@ -652,12 +676,6 @@ namespace Bulldozer
                 RectTransform rect = DestroyMachinesCheck.GetComponent<RectTransform>();
                 if (rect != null)
                     rect.anchoredPosition = new Vector2(GetCheckBoxXValue(), -120);
-            }
-            if (ConfigButton != null)
-            {
-                RectTransform rect = ConfigButton.GetComponent<RectTransform>();
-                if (rect != null)
-                    rect.anchoredPosition = new Vector2(GetCheckBoxXValue() + 19, -120);
             }
         }
 
@@ -680,8 +698,6 @@ namespace Bulldozer
                 AlterVeinsCheckBoxImage.gameObject.SetActive(false);
             if (DestroyMachinesCheckBoxImage != null)
                 DestroyMachinesCheckBoxImage.gameObject.SetActive(false);
-            if (ConfigIconImage != null)
-                ConfigIconImage.gameObject.SetActive(false);
         }
 
         public bool IsShowing()
